@@ -1,9 +1,15 @@
 package de.ngloader.referee.util;
 
+<<<<<<< feat-purge-command
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+=======
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+>>>>>>> master
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -45,8 +51,13 @@ public class NameMapper {
 		}
 		
 		Properties properties = new Properties();
+<<<<<<< feat-purge-command
 		try (BufferedReader bufferedReader = Files.newBufferedReader(this.file, StandardCharsets.UTF_8)) {
 			properties.load(bufferedReader);
+=======
+		try (InputStream inputStream = Files.newInputStream(this.file)) {
+			properties.load(inputStream);
+>>>>>>> master
 		} catch (IOException e) {
 			RefereeLogger.error("Error by loading default " + this.file.getFileName().toString() + " file!", e);
 		}
@@ -65,8 +76,13 @@ public class NameMapper {
 		try {
 			Files.createDirectories(this.file.getParent());
 			
+<<<<<<< feat-purge-command
 			try (BufferedWriter bufferedWriter = Files.newBufferedWriter(this.file, StandardCharsets.UTF_8)) {
 				properties.store(bufferedWriter, Instant.now().toString());
+=======
+			try (OutputStream outputStream = Files.newOutputStream(this.file)) {
+				properties.store(outputStream, Instant.now().toString());
+>>>>>>> master
 			}
 		} catch (Exception e) {
 			RefereeLogger.error("Error by creating default " + this.file.getFileName().toString() + " file!", e);
