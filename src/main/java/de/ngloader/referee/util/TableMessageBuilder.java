@@ -1,4 +1,4 @@
-package de.ngloader.schiedsrichter.util;
+package de.ngloader.referee.util;
 
 import java.util.Comparator;
 import java.util.HashMap;
