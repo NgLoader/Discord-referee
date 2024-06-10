@@ -39,8 +39,4 @@ public class NameMapperCommand implements RefereeCommand {
 		
 		return event.createFollowup("Alle name mappings wurden neugeladen!");
 	}
-<<<<<<< feat-purge-command
-=======
-
->>>>>>> master
 }

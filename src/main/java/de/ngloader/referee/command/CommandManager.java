@@ -2,25 +2,17 @@ package de.ngloader.referee.command;
 
 import java.util.HashMap;
 import java.util.Map;
-<<<<<<< feat-purge-command
 import java.util.Optional;
-=======
->>>>>>> master
 
 import de.ngloader.referee.Referee;
 import de.ngloader.referee.RefereeLogger;
 import de.ngloader.referee.command.registry.NameMapperCommand;
-<<<<<<< feat-purge-command
 import de.ngloader.referee.command.registry.PurgeCommand;
 import discord4j.common.util.Snowflake;
 import discord4j.core.event.domain.interaction.ChatInputInteractionEvent;
 import discord4j.core.object.entity.Member;
 import discord4j.core.object.entity.Message;
 import discord4j.core.object.entity.User;
-=======
-import discord4j.core.event.domain.interaction.ChatInputInteractionEvent;
-import discord4j.core.object.entity.Message;
->>>>>>> master
 import discord4j.rest.service.ApplicationService;
 import reactor.core.publisher.Mono;
 
@@ -29,7 +21,6 @@ public class CommandManager {
 	private final Map<String, RefereeCommand> registeredCommands = new HashMap<>();
 
 	private final Referee app;
-<<<<<<< feat-purge-command
 	private final Snowflake adminRoleId;
 	
 	public CommandManager(Referee app) {
@@ -38,13 +29,6 @@ public class CommandManager {
 		
 		this.registerCommand(new NameMapperCommand());
 		this.registerCommand(new PurgeCommand());
-=======
-	
-	public CommandManager(Referee app) {
-		this.app = app;
-		
-		this.registerCommand(new NameMapperCommand());
->>>>>>> master
 		
 		app.getGateway().on(ChatInputInteractionEvent.class, this::handleChatInput).subscribe();
 	}
@@ -61,7 +45,6 @@ public class CommandManager {
 	
 	private Mono<Message> handleCommand(ChatInputInteractionEvent event, RefereeCommand command) {
 		try {
-<<<<<<< feat-purge-command
 			User user = event.getInteraction().getUser();
 			if (user.isBot()) {
 				return event.createFollowup("Nope");
@@ -78,9 +61,6 @@ public class CommandManager {
 				return event.createFollowup("Nope");
 			}
 			
-			
-=======
->>>>>>> master
 			return command.handle(event);
 		} catch (Exception e) {
 			RefereeLogger.error(String.format("Error by handling command \"%s\"", command.getCommand()), e);
