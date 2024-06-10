@@ -12,4 +12,10 @@ public interface RefereeCommand {
 	ApplicationCommandRequest createApplication();
 	
 	Mono<Message> handle(ChatInputInteractionEvent event);
+
+	default boolean ephemeral() {
+		return true;
+	}
+
+	default void destroy() { }
 }

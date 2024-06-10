@@ -4,6 +4,8 @@ import java.util.List;
 
 import de.ngloader.referee.command.RefereeCommand;
 import discord4j.core.event.domain.interaction.ChatInputInteractionEvent;
+import discord4j.core.object.command.ApplicationCommandInteractionOption;
+import discord4j.core.object.command.ApplicationCommandOption;
 import discord4j.core.object.entity.Message;
 import discord4j.discordjson.json.ApplicationCommandOptionData;
 import discord4j.discordjson.json.ApplicationCommandRequest;
@@ -19,7 +21,7 @@ public class SchoolplanCommand implements RefereeCommand {
 
 	@Override
 	public String getCommand() {
-		return "plan";
+		return "Plan";
 	}
 
 	@Override
@@ -29,19 +31,34 @@ public class SchoolplanCommand implements RefereeCommand {
 				.description("Studenplan verwalten")
 				.addAllOptions(List.of(
 						ApplicationCommandOptionData.builder()
-						.name("validate")
-						.description("Überprüfe ob es einen neuen Stundenplan gibt")
-						.build(),
-						ApplicationCommandOptionData.builder()
 						.name("generate")
 						.description("Generiere einen neuen Stundenplan")
-						.build())
+				        .type(ApplicationCommandOption.Type.SUB_COMMAND.getValue())
+				        .build(),
+						ApplicationCommandOptionData.builder()
+						.name("check")
+						.description("Prüfe ob ein neuer stundenplan vorhanden ist")
+				        .type(ApplicationCommandOption.Type.SUB_COMMAND.getValue())
+						.build()
+					)
 				).build();
 	}
 
 	@Override
 	public Mono<Message> handle(ChatInputInteractionEvent event) {
-		return null;
+		ApplicationCommandInteractionOption option = event.getOptions().getFirst();
+		switch (option.getName()) {
+			case "generate":
+				this.module.forceUpdate(true);
+				return event.createFollowup("Neuer Stundenplan wird dargestellt!");
+				
+			case "check":
+				this.module.forceUpdate(false);
+				return event.createFollowup("Der Stundenplan wird auf aktualisierungen geprüft!");
+			
+			default:
+				return event.createFollowup("Invalid action!");
+		}
 	}
 
 }

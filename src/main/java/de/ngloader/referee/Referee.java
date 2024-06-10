@@ -1,12 +1,11 @@
 package de.ngloader.referee;
 
-import de.ngloader.referee.module.registry.schoolplan.SchoolplanModule;
-import de.ngloader.referee.util.CourseName;
-import de.ngloader.referee.util.TeacherName;
+import de.ngloader.referee.command.CommandManager;
+import de.ngloader.referee.module.ModuleManager;
+import de.ngloader.referee.util.NameMapper;
 import discord4j.core.DiscordClient;
 import discord4j.core.GatewayDiscordClient;
 import discord4j.core.object.entity.Guild;
-import discord4j.rest.service.ApplicationService;
 
 public class Referee {
 
@@ -22,8 +21,7 @@ public class Referee {
 		// save when new variables where added (updates)
 		config.saveConfig();
 		
-		CourseName.initalizeStaticFields();
-		TeacherName.initalizeStaticFields();
+		NameMapper.initalizeStaticFields();
 		
 		new Referee(config);
 	}
@@ -35,7 +33,8 @@ public class Referee {
 
 	private final Guild guild;
 	
-	private final SchoolplanModule schoolplanModule;
+	private final CommandManager commandManager;
+	private final ModuleManager moduleManager;
 
 	public Referee(RefereeConfig config) {
 		this.config = config;
@@ -45,24 +44,27 @@ public class Referee {
 
 		this.guild = this.gateway.getGuildById(config.getGuildId()).block();
 
-		this.schoolplanModule = new SchoolplanModule(this);
-		this.schoolplanModule.startScheduler();
+		this.commandManager = new CommandManager(this);
+		this.moduleManager = new ModuleManager(this);
+
+		this.commandManager.overrideApplicationCommands();
 
 		this.gateway.onDisconnect().block();
 	}
-	
-	public void registerCommands() {
-		long guildId = this.guild.getId().asLong();
-		long applicationId = this.client.getApplicationId().block();
-		ApplicationService applicationService = this.client.getApplicationService();
-		
-		applicationService.createGuildApplicationCommand(applicationId, guildId, this.schoolplanModule.createCommand()).subscribe();
-	}
 
 	public void destroy() {
-		this.schoolplanModule.destroy();
+		this.commandManager.destroy();
+		this.moduleManager.destroy();
 		
 		this.gateway.logout().block();
+	}
+	
+	public CommandManager getCommandManager() {
+		return this.commandManager;
+	}
+	
+	public ModuleManager getModuleManager() {
+		return this.moduleManager;
 	}
 
 	public Guild getGuild() {

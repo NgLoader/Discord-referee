@@ -23,7 +23,7 @@ public class RefereeConfig {
 	
 	private Snowflake guildId = Snowflake.of(0);
 	private Snowflake planChannelId = Snowflake.of(0);
-	private Snowflake planTagId = Snowflake.of(0);
+	private String planTagId = "128286216708685824";
 	
 	RefereeConfig() { }
 	
@@ -50,7 +50,7 @@ public class RefereeConfig {
 
 		this.guildId = Snowflake.of(this.properties.getProperty("guildId"));
 		this.planChannelId = Snowflake.of(this.properties.getProperty("planChannelId"));
-		this.planTagId = Snowflake.of(this.properties.getProperty("planTagId"));
+		this.planTagId = this.properties.getProperty("planTagId");
 		
 		return true;
 	}
@@ -70,7 +70,7 @@ public class RefereeConfig {
 
 		this.properties.setProperty("guildId", this.guildId.asString());
 		this.properties.setProperty("planChannelId", this.planChannelId.asString());
-		this.properties.setProperty("planTagId", this.planTagId.asString());
+		this.properties.setProperty("planTagId", this.planTagId);
 		
 		try (OutputStream outputStream = Files.newOutputStream(CONFIG_FILE)) {
 			this.properties.store(outputStream, new Date().toInstant().toString());
@@ -99,7 +99,7 @@ public class RefereeConfig {
 		return this.planChannelId;
 	}
 	
-	public Snowflake getPlanTagId() {
+	public String getPlanTagId() {
 		return this.planTagId;
 	}
 }
