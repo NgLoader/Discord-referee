@@ -1,8 +1,9 @@
 package de.ngloader.referee.util;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -44,8 +45,8 @@ public class NameMapper {
 		}
 		
 		Properties properties = new Properties();
-		try (InputStream inputStream = Files.newInputStream(this.file)) {
-			properties.load(inputStream);
+		try (BufferedReader bufferedReader = Files.newBufferedReader(this.file, StandardCharsets.UTF_8)) {
+			properties.load(bufferedReader);
 		} catch (IOException e) {
 			RefereeLogger.error("Error by loading default " + this.file.getFileName().toString() + " file!", e);
 		}
@@ -64,8 +65,8 @@ public class NameMapper {
 		try {
 			Files.createDirectories(this.file.getParent());
 			
-			try (OutputStream outputStream = Files.newOutputStream(this.file)) {
-				properties.store(outputStream, Instant.now().toString());
+			try (BufferedWriter bufferedWriter = Files.newBufferedWriter(this.file, StandardCharsets.UTF_8)) {
+				properties.store(bufferedWriter, Instant.now().toString());
 			}
 		} catch (Exception e) {
 			RefereeLogger.error("Error by creating default " + this.file.getFileName().toString() + " file!", e);
