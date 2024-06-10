@@ -1,4 +1,4 @@
-package de.ngloader.schiedsrichter.plan;
+package de.ngloader.referee.module.registry.schoolplan;
 
 import java.util.List;
 
