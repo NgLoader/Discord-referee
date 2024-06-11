@@ -86,6 +86,7 @@ public class SchoolplanModule extends RefereeModule {
 
 	private Thread currentThread;
 	private AtomicBoolean running = new AtomicBoolean(false);
+	private int failedRequestCount = 0;
 
 	public SchoolplanModule(Referee app) {
 		super(app, "Schoolplan");
@@ -117,40 +118,69 @@ public class SchoolplanModule extends RefereeModule {
 		boolean isRunning = this.running.get();
 		this.stopScheduler();
 
-		this.updatePlan(force);
+		try {
+			this.updatePlan(force);
+		} catch (IOException | InterruptedException e) {
+			RefereeLogger.error("Failed to update plan!", e);
+		}
 
 		if (isRunning) {
 			this.startScheduler();
 		}
 	}
 
-	public void startScheduler() {
+	public boolean startScheduler() {
 		if (this.running.compareAndSet(false, true)) {
-			this.currentThread = new Thread(() -> this.tickTask(), "Referee - Schoolplan");
+			this.currentThread = new Thread(() -> this.tickTask(), "Referee - Schoolplan - Scheduler");
 			this.currentThread.start();
+			
+			RefereeLogger.info("Schoolplan scheduler started.");
+			return true;
 		}
+		return false;
 	}
 
-	public void stopScheduler() {
-		this.running.compareAndSet(true, false);
+	public boolean stopScheduler() {
+		boolean runningToggled = this.running.compareAndSet(true, false);
 		if (this.currentThread != null) {
 			if (!this.currentThread.isInterrupted()) {
 				this.currentThread.interrupt();
 			}
 			
 			this.currentThread = null;
+
+			RefereeLogger.info("Schoolplan scheduler stopped.");
+			return runningToggled;
 		}
+		return false;
 	}
 
 	private void tickTask() {
 		while(this.running.get()) {
-			this.updatePlan(false);
+			try {
+				this.updatePlan(false);
+			} catch (Exception e) {
+				RefereeLogger.error(String.format("Something went wrong! Try (%d/30)", this.failedRequestCount++), e);
+				
+				if (this.failedRequestCount > 30) {
+					RefereeLogger.warn("Stopping tick task from plan scheduler because alle 30 request failed!");
+					this.stopScheduler();
+					
+					this.channel.createMessage(String.format("<@%s> Stundenplan scheduler wegen störungen pausiert! Bitte logs überprüfen!",
+							this.config.getAdminRoleId().asString())
+						).subscribe();
+					return;
+				}
+				
+				RefereeLogger.info("Request will retry in 30min!");
+			}
+			
 			try {
 				Thread.sleep(1000 * 60 * 30); // check for updates every 30min.
 			} catch (InterruptedException e) {
-				// TODO ignore interrupted exception
+				// ignore interrupted exception
 			} catch (Exception e) {
-				RefereeLogger.error("Error by updating plan! stopping task", e);
+				RefereeLogger.error("Error in tick task from plan scheduler! stopping task", e);
 				this.stopScheduler();
 			}
 		}
@@ -191,34 +221,30 @@ public class SchoolplanModule extends RefereeModule {
 		}
 	}
 
-	private void updatePlan(boolean force) {
-		List<WeeklySchedule> scheduleList = null;
-		try {
-			HttpClient client = this.requestNewLogin();
-			if (client == null) {
-				throw new NullPointerException("Invalid login data for ilias!");
-			}
-			
-			String download = this.requestLatestDownloadPath(client);
-
-			if (!force && this.previousFile != null && this.previousFile.equalsIgnoreCase(download)) {
-				return;
-			}
-			this.previousFile = download;
-
-			Path path = this.downloadFile(client, download);
-			scheduleList = this.analyzePlan(path);
-		} catch (IOException | InterruptedException e) {
-			e.printStackTrace();
+	private void updatePlan(boolean force) throws IOException, InterruptedException {
+		HttpClient client = this.requestNewLogin();
+		if (client == null) {
+			throw new NullPointerException("Invalid login data for ilias!");
 		}
+		
+		String download = this.requestLatestDownloadPath(client);
+		if (!force && this.previousFile != null && this.previousFile.equalsIgnoreCase(download)) {
+			return;
+		}
+		this.previousFile = download;
 
+		Path path = this.downloadFile(client, download);
+		// TODO invalidate login after download
+		
+		List<ScheduleWeekly> scheduleList = this.analyzePlan(path);
+		
 		if (scheduleList != null) {
-			Optional<WeeklySchedule> scheduleOptional = scheduleList.stream().filter(schedule -> schedule.course().endsWith("HVI 24/1")).findAny();
+			Optional<ScheduleWeekly> scheduleOptional = scheduleList.stream().filter(schedule -> schedule.course().endsWith("HVI 24/1")).findAny();
 			if (scheduleOptional.isEmpty()) {
 				return;
 			}
-			WeeklySchedule schedule = scheduleOptional.get();
-			List<DailySchedule> dailySchedule = schedule.daily();
+			ScheduleWeekly schedule = scheduleOptional.get();
+			List<ScheduleDaily> dailySchedule = schedule.daily();
 
 			Color color;
 			Random random = new Random();
@@ -242,7 +268,7 @@ public class SchoolplanModule extends RefereeModule {
 			.block();
 
 			int dayIndex = 0;
-			for (DailySchedule daily : dailySchedule) {
+			for (ScheduleDaily daily : dailySchedule) {
 				EmbedCreateSpec.Builder embedBuilder = EmbedCreateSpec.builder()
 						.title(DAY_NAME_LIST[dayIndex])
 						.color(this.previousColor)
@@ -256,14 +282,15 @@ public class SchoolplanModule extends RefereeModule {
 				dayIndex++;
 
 				int lessonIndex = 0;
-				for (RoomInfo room : daily.lessons()) {
+				for (ScheduleLesson lesson : daily.lessons()) {
 					embedBuilder.addField(
-							String.format("**%s**", DAY_HOUR_LIST[lessonIndex]),
-							String.format("**%s** ``(%s)``\n**%s** ``%s``",
-									NameMapper.COURSE.getName(room.course()),
-									room.course(),
-									NameMapper.TEACHER.getName(room.teacher()),
-									room.teacher()),
+							String.format("**%s** ``Raum: %s``", DAY_HOUR_LIST[lessonIndex], lesson.room()),
+							String.format("**%s** ``(%s)``\n"
+									+ "**%s** ``%s``\n",
+									NameMapper.COURSE.getName(lesson.course()),
+									lesson.course(),
+									NameMapper.TEACHER.getName(lesson.teacher()),
+									lesson.teacher()),
 							false);
 
 					lessonIndex++;
@@ -276,8 +303,8 @@ public class SchoolplanModule extends RefereeModule {
 		}
 	}
 	
-	private List<WeeklySchedule> analyzePlan(Path path) throws IOException {
-        List<WeeklySchedule> lehrgangs = new ArrayList<>();
+	private List<ScheduleWeekly> analyzePlan(Path path) throws IOException {
+        List<ScheduleWeekly> lehrgangs = new ArrayList<>();
 
 		try (PDDocument document = PDDocument.load(path.toFile())) {
 			PDFTextStripper stripper = new PDFTextStripper();
@@ -288,8 +315,8 @@ public class SchoolplanModule extends RefereeModule {
 
 			String course = null;
 			String currentTeacher = null;
-			List<RoomInfo> dailySchedule = new ArrayList<>();
-			List<DailySchedule> weeklySchedule = new ArrayList<>();
+			List<ScheduleLesson> dailySchedule = new ArrayList<>();
+			List<ScheduleDaily> weeklySchedule = new ArrayList<>();
 
 			for (String line : lines) {
             	if (line.contains("Stundenplan") && line.contains("vom") && line.contains("bis")) {
@@ -297,10 +324,10 @@ public class SchoolplanModule extends RefereeModule {
 				} else if (line.matches(".*\\bMeister-Lgg\\b.*")) {
 					if (course != null) {
 						if (!dailySchedule.isEmpty()) {
-							weeklySchedule.add(new DailySchedule(new ArrayList<>(dailySchedule)));
+							weeklySchedule.add(new ScheduleDaily(new ArrayList<>(dailySchedule)));
 							dailySchedule.clear();
 						}
-						lehrgangs.add(new WeeklySchedule(date, course, currentTeacher, new ArrayList<>(weeklySchedule)));
+						lehrgangs.add(new ScheduleWeekly(date, course, currentTeacher, new ArrayList<>(weeklySchedule)));
 						weeklySchedule.clear();
 					}
 					course = line.trim();
@@ -313,7 +340,7 @@ public class SchoolplanModule extends RefereeModule {
 
 					if (line.matches(".*\\s+(Mo|Di|Mi|Do|Fr|Sa|So)")) {
 						if (!dailySchedule.isEmpty()) {
-							weeklySchedule.add(new DailySchedule(new ArrayList<>(dailySchedule)));
+							weeklySchedule.add(new ScheduleDaily(new ArrayList<>(dailySchedule)));
 							dailySchedule.clear();
 						}
 					} else {
@@ -324,15 +351,15 @@ public class SchoolplanModule extends RefereeModule {
 					String teacher = techerWithType.substring(0, 4);
 					String type = techerWithType.substring(4);
 
-					dailySchedule.add(new RoomInfo(teacher, type, lesson[1], schedule));
+					dailySchedule.add(new ScheduleLesson(teacher, type, lesson[1], schedule));
 				}
 			}
 
 			if (course != null) {
 				if (!dailySchedule.isEmpty()) {
-					weeklySchedule.add(new DailySchedule(new ArrayList<>(dailySchedule)));
+					weeklySchedule.add(new ScheduleDaily(new ArrayList<>(dailySchedule)));
 				}
-				lehrgangs.add(new WeeklySchedule(date, course, currentTeacher, new ArrayList<>(weeklySchedule)));
+				lehrgangs.add(new ScheduleWeekly(date, course, currentTeacher, new ArrayList<>(weeklySchedule)));
 			}
 		}
 
