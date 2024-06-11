@@ -39,6 +39,16 @@ public class SchoolplanCommand implements RefereeCommand {
 						.name("check")
 						.description("Prüfe ob ein neuer stundenplan vorhanden ist")
 				        .type(ApplicationCommandOption.Type.SUB_COMMAND.getValue())
+						.build(),
+						ApplicationCommandOptionData.builder()
+						.name("start")
+						.description("Starte die automatischen updates")
+				        .type(ApplicationCommandOption.Type.SUB_COMMAND.getValue())
+						.build(),
+						ApplicationCommandOptionData.builder()
+						.name("stop")
+						.description("Stoppe die automatischen updates")
+				        .type(ApplicationCommandOption.Type.SUB_COMMAND.getValue())
 						.build()
 					)
 				).build();
@@ -55,7 +65,17 @@ public class SchoolplanCommand implements RefereeCommand {
 			case "check":
 				this.module.forceUpdate(false);
 				return event.createFollowup("Der Stundenplan wird auf aktualisierungen geprüft!");
-			
+
+			case "start":
+				return event.createFollowup(this.module.startScheduler()
+						? "Stundenplan scheduler wurde gestartet"
+						: "Stundenplan scheduler ist bereits gestartet!");
+				
+			case "stop":
+				return event.createFollowup(this.module.stopScheduler()
+						? "Stundenplan scheduler wurde gestoppt"
+						: "Stundenplan scheduler ist bereits gestoppt!");
+				
 			default:
 				return event.createFollowup("Invalid action!");
 		}
