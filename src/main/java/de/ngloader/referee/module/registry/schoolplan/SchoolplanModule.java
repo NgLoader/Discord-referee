@@ -222,84 +222,88 @@ public class SchoolplanModule extends RefereeModule {
 	}
 
 	private void updatePlan(boolean force) throws IOException, InterruptedException {
-		HttpClient client = this.requestNewLogin();
-		if (client == null) {
-			throw new NullPointerException("Invalid login data for ilias!");
-		}
-		
-		String download = this.requestLatestDownloadPath(client);
-		if (!force && this.previousFile != null && this.previousFile.equalsIgnoreCase(download)) {
-			return;
-		}
-		this.previousFile = download;
-
-		Path path = this.downloadFile(client, download);
-		// TODO invalidate login after download
-		
-		List<ScheduleWeekly> scheduleList = this.analyzePlan(path);
-		
-		if (scheduleList != null) {
-			Optional<ScheduleWeekly> scheduleOptional = scheduleList.stream().filter(schedule -> schedule.course().endsWith("HVI 24/1")).findAny();
-			if (scheduleOptional.isEmpty()) {
+		try (HttpClient client = this.requestNewLogin()) {
+			if (client == null) {
+				throw new NullPointerException("Invalid login data for ilias!");
+			}
+			
+			String download = this.requestLatestDownloadPath(client);
+			if (!force && this.previousFile != null && this.previousFile.equalsIgnoreCase(download)) {
 				return;
 			}
-			ScheduleWeekly schedule = scheduleOptional.get();
-			List<ScheduleDaily> dailySchedule = schedule.daily();
+			this.previousFile = download;
 
-			Color color;
-			Random random = new Random();
-			do {
-				color = COLOR_LIST[random.nextInt(COLOR_LIST.length)];
-			} while (this.previousColor == color);
-			this.previousColor = color;
-
-			Message headerMessage = this.channel.createMessage(MessageCreateSpec.builder()
-					.content(String.format("<@%s> Es gibt einen neuen Stundenplan!", this.config.getPlanTagId()))
-					.addEmbed(EmbedCreateSpec.builder()
-							.title(schedule.date())
-							.footer(String.format("Kurs: %s\nKlassenlehrer: %s",
-									schedule.course(),
-									schedule.teacher()),
-								"")
-							.url(this.previousFile)
-							.color(this.previousColor)
-							.build())
-					.build())
-			.block();
-
-			int dayIndex = 0;
-			for (ScheduleDaily daily : dailySchedule) {
-				EmbedCreateSpec.Builder embedBuilder = EmbedCreateSpec.builder()
-						.title(DAY_NAME_LIST[dayIndex])
-						.color(this.previousColor)
-						.description(String.format("[Übersicht](https://discordapp.com/channels/%s/%s/%s)",
-								this.channel.getGuildId().asString(),
-								this.channel.getId().asString(),
-								headerMessage.getId().asString()))
-						.footer(schedule.date(), "");
-
-				// increment for next day
-				dayIndex++;
-
-				int lessonIndex = 0;
-				for (ScheduleLesson lesson : daily.lessons()) {
-					embedBuilder.addField(
-							String.format("**%s** ``Raum: %s``", DAY_HOUR_LIST[lessonIndex], lesson.room()),
-							String.format("**%s** ``(%s)``\n"
-									+ "**%s** ``%s``\n",
-									NameMapper.COURSE.getName(lesson.course()),
-									lesson.course(),
-									NameMapper.TEACHER.getName(lesson.teacher()),
-									lesson.teacher()),
-							false);
-
-					lessonIndex++;
+			Path path = this.downloadFile(client, download);
+			// TODO invalidate login after download
+			
+			List<ScheduleWeekly> scheduleList = this.analyzePlan(path);
+			
+			if (scheduleList != null) {
+				Optional<ScheduleWeekly> scheduleOptional = scheduleList.stream().filter(schedule -> schedule.course().endsWith("HVI 24/1")).findAny();
+				if (scheduleOptional.isEmpty()) {
+					return;
 				}
 
-				this.channel.createMessage(embedBuilder.build()).subscribe();
+				this.printPlan(scheduleOptional.get());
+				this.savePrevious();
+			}
+		}
+	}
+	
+	private void printPlan(ScheduleWeekly schedule) {
+		List<ScheduleDaily> dailySchedule = schedule.daily();
+
+		Color color;
+		Random random = new Random();
+		do {
+			color = COLOR_LIST[random.nextInt(COLOR_LIST.length)];
+		} while (this.previousColor == color);
+		this.previousColor = color;
+
+		Message headerMessage = this.channel.createMessage(MessageCreateSpec.builder()
+				.content(String.format("<@%s> Es gibt einen neuen Stundenplan!", this.config.getPlanTagId()))
+				.addEmbed(EmbedCreateSpec.builder()
+						.title(schedule.date())
+						.footer(String.format("Kurs: %s\nKlassenlehrer: %s",
+								schedule.course(),
+								schedule.teacher()),
+							"")
+						.url(this.previousFile)
+						.color(this.previousColor)
+						.build())
+				.build())
+		.block();
+
+		int dayIndex = 0;
+		for (ScheduleDaily daily : dailySchedule) {
+			EmbedCreateSpec.Builder embedBuilder = EmbedCreateSpec.builder()
+					.title(DAY_NAME_LIST[dayIndex])
+					.color(this.previousColor)
+					.description(String.format("[Übersicht](https://discordapp.com/channels/%s/%s/%s)",
+							this.channel.getGuildId().asString(),
+							this.channel.getId().asString(),
+							headerMessage.getId().asString()))
+					.footer(schedule.date(), "");
+
+			// increment for next day
+			dayIndex++;
+
+			int lessonIndex = 0;
+			for (ScheduleLesson lesson : daily.lessons()) {
+				embedBuilder.addField(
+						String.format("**%s** ``Raum: %s``", DAY_HOUR_LIST[lessonIndex], lesson.room()),
+						String.format("**%s** ``(%s)``\n"
+								+ "**%s** ``%s``\n",
+								NameMapper.COURSE.getName(lesson.course()),
+								lesson.course(),
+								NameMapper.TEACHER.getName(lesson.teacher()),
+								lesson.teacher()),
+						false);
+
+				lessonIndex++;
 			}
 
-			this.savePrevious();
+			this.channel.createMessage(embedBuilder.build()).subscribe();
 		}
 	}
 	
