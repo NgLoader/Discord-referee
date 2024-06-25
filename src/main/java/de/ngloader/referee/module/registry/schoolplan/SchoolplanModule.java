@@ -24,6 +24,8 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -43,6 +45,9 @@ import discord4j.core.spec.MessageCreateSpec;
 import discord4j.rest.util.Color;
 
 public class SchoolplanModule extends RefereeModule {
+	
+	private static final Pattern PATTERN_LESSON = Pattern.compile(" ([A-Za-z]{4})([A-Za-z0-9-]+)\\s+([A-Za-z0-9]+)\\s+([A-Za-z0-9 .,]{0,}|\\s+)(Mo|Di|Mi|Do|Fr|Sa|So|[0-9])");
+	private static final Pattern PATTERN_CUSTOM = Pattern.compile(" ([A-Za-z0-9]{1,})\\s{0,}(Mo|Di|Mi|Do|Fr|Sa|So|[0-9])");
 
 	private static final Path PREVIOUS_FILE = Path.of("./data/cache/studenplan.previous.properties");
 
@@ -289,17 +294,27 @@ public class SchoolplanModule extends RefereeModule {
 			dayIndex++;
 
 			int lessonIndex = 0;
-			for (ScheduleLesson lesson : daily.lessons()) {
-				embedBuilder.addField(
-						String.format("**%s** ``Raum: %s``", DAY_HOUR_LIST[lessonIndex], lesson.room()),
-						String.format("**%s** ``(%s)``\n"
-								+ "**%s** ``%s``\n",
-								NameMapper.COURSE.getName(lesson.course()),
-								lesson.course(),
-								NameMapper.TEACHER.getName(lesson.teacher()),
-								lesson.teacher()),
-						false);
-
+			for (ScheduleLesson abstractLesson : daily.lessons()) {
+				if (abstractLesson instanceof ScheduleLessonEntry lesson) {
+					embedBuilder.addField(
+							String.format("**%s** ``Raum: %s``", DAY_HOUR_LIST[lessonIndex], lesson.room()),
+							String.format("**%s** ``(%s)``\n"
+									+ "**%s** ``%s``\n%s",
+									NameMapper.COURSE.getName(lesson.course()),
+									lesson.course(),
+									NameMapper.TEACHER.getName(lesson.teacher()),
+									lesson.teacher(),
+									lesson.addition() != null && !lesson.addition().isBlank()
+										? "**Info: ** ``" + lesson.addition() + "``"
+										: lesson.addition()),
+							false);
+				} else {
+					embedBuilder.addField(
+							String.format("**%s**", DAY_HOUR_LIST[lessonIndex]),
+							String.format("**Info** ``%s``", abstractLesson.addition()),
+							false);
+				}
+				
 				lessonIndex++;
 			}
 
@@ -338,24 +353,75 @@ public class SchoolplanModule extends RefereeModule {
 					currentTeacher = null;
 				} else if (course != null && currentTeacher == null) {
 					currentTeacher = line.trim();
-				} else if (course != null && line.matches(" ([A-Za-z]+)-([A-Za-z])\\s([0-9]+)\\s+(Mo|Di|Mi|Do|Fr|Sa|So|[0-9])")) {
-					String[] lesson = line.trim().split(" ");
-					int schedule = 1;
-
-					if (line.matches(".*\\s+(Mo|Di|Mi|Do|Fr|Sa|So)")) {
+				} else {
+					// skip parsing for invalid type
+					if (line.startsWith("Kostenträger")) {
+						continue;
+					}
+					
+					if (line.matches(".*\\s+([A-Za-z]{0,}(Mo|Di|Mi|Do|Fr|Sa|So))")) {
 						if (!dailySchedule.isEmpty()) {
 							weeklySchedule.add(new ScheduleDaily(new ArrayList<>(dailySchedule)));
 							dailySchedule.clear();
 						}
-					} else {
-						schedule = Integer.valueOf(lesson[lesson.length - 1]);
 					}
+					
+					Matcher matcherLesson = PATTERN_LESSON.matcher(line);						/*
+					 * pattern:
+					 * <Teacher>-<Type> <Room> <Room>
+					 * <Teacher>-<Type> <Room> <Addition> <Room>
+					 * <Teacher>-<Type> <Room> <Addition><Room>
+					 *  
+					 *  group:
+					 *  1: teacher
+					 *  2: type
+					 *  3: room
+					 *  4: addition
+					 *  5: room
+					 * 
+					 * example valid:
+					 *  HUCKbw-u 220 contentFr
+					 *  HUCKbw-u 220 content Fr
+					 *  HUCKbw-u 220 Fr
+					 *  HUCKbw-u 220 content3
+					 *  HUCKbw-u 220 content 3
+					 *  HUCKbw-u 220 3
+					 */
+					if (matcherLesson.find()) {
+						String teacher = matcherLesson.group(1);
+						String type = matcherLesson.group(2);
+						String room = matcherLesson.group(3);
+						String addition = matcherLesson.group(4);
+						String schedule = matcherLesson.group(5);
+						int scheduleInt = schedule.matches("[0-9]+") ? Integer.valueOf(schedule) : 0;
 
-					String techerWithType = lesson[0];
-					String teacher = techerWithType.substring(0, 4);
-					String type = techerWithType.substring(4);
-
-					dailySchedule.add(new ScheduleLesson(teacher, type, lesson[1], schedule));
+						dailySchedule.add(new ScheduleLessonEntry(teacher, type, room, addition, scheduleInt));
+						continue;
+					}
+					
+					Matcher matcherCustom = PATTERN_CUSTOM.matcher(line);						/*
+					 * pattern:
+					 * <Addition> <Room>
+					 * <Addition><Room>
+					 *  
+					 *  group:
+					 *  4: addition
+					 *  5: room
+					 * 
+					 * example valid:
+					 *  ufrei Fr
+					 *  ufrei Frz
+					 *  ufrei 1
+					 *  ufrei 1z
+					 */
+					if (matcherCustom.find()) {
+						String addition = matcherCustom.group(1);
+						String schedule = matcherCustom.group(2);
+						int scheduleInt = schedule.matches("[0-9]+") ? Integer.valueOf(schedule) : 0;
+						
+						dailySchedule.add(new ScheduleLessonCustom(addition, scheduleInt));
+						continue;
+					}
 				}
 			}
 
@@ -365,6 +431,8 @@ public class SchoolplanModule extends RefereeModule {
 				}
 				lehrgangs.add(new ScheduleWeekly(date, course, currentTeacher, new ArrayList<>(weeklySchedule)));
 			}
+		} catch (Exception e) {
+			e.printStackTrace();
 		}
 
         return lehrgangs;
