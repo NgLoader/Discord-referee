@@ -380,12 +380,14 @@ public class SchoolplanModule extends RefereeModule {
 					 *  5: room
 					 * 
 					 * example valid:
-					 *  HUCKbw-u 220 contentFr
-					 *  HUCKbw-u 220 content Fr
-					 *  HUCKbw-u 220 Fr
-					 *  HUCKbw-u 220 content3
-					 *  HUCKbw-u 220 content 3
-					 *  HUCKbw-u 220 3
+					 *  NIGEde-v 404 contentFr
+					 *  NIGEde-v 404 content Fr
+					 *  NIGEde-v 404 Fr
+					 *  NIGEde-v 404 content3
+					 *  NIGEde-v 404 content 3
+					 *  NIGEde-v 404 3
+					 *  NIGEdev 404 content3
+					 *  NIGEdev 404 content 3
 					 */
 					if (matcherLesson.find()) {
 						String teacher = matcherLesson.group(1);
