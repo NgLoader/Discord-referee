@@ -25,9 +25,6 @@ public class RefereeConfig {
 	private Snowflake guildId = Snowflake.of(0);
 	private Snowflake adminRoleId = Snowflake.of(0);
 	
-	private Snowflake planChannelId = Snowflake.of(0);
-	private String planTagId = "128286216708685824";
-	
 	RefereeConfig() { }
 	
 	public boolean loadConfig() {
@@ -52,11 +49,7 @@ public class RefereeConfig {
 
 		this.iliasUsername = this.properties.getProperty("iliasUsername");
 		this.iliasPasswort = this.properties.getProperty("iliasPasswort");
-		
-		this.planChannelId = Snowflake.of(this.properties.getProperty("planChannelId", "0"));
 
-		this.planTagId = this.properties.getProperty("planTagId");
-		
 		return true;
 	}
 	
@@ -76,9 +69,6 @@ public class RefereeConfig {
 		this.properties.setProperty("iliasUsername", this.iliasUsername);
 		this.properties.setProperty("iliasPasswort", this.iliasPasswort);
 
-		this.properties.setProperty("planChannelId", this.planChannelId.asString());
-		this.properties.setProperty("planTagId", this.planTagId);
-		
 		try (BufferedWriter bufferedWriter = Files.newBufferedWriter(CONFIG_FILE, StandardCharsets.UTF_8)) {
 			this.properties.store(bufferedWriter, new Date().toInstant().toString());
 		} catch (IOException e) {
@@ -106,11 +96,7 @@ public class RefereeConfig {
 		return this.iliasPasswort;
 	}
 	
-	public Snowflake getPlanChannelId() {
-		return this.planChannelId;
-	}
-	
-	public String getPlanTagId() {
-		return this.planTagId;
+	public Properties getProperties() {
+		return this.properties;
 	}
 }

@@ -23,7 +23,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Random;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -38,6 +37,7 @@ import de.ngloader.referee.RefereeLogger;
 import de.ngloader.referee.command.RefereeCommand;
 import de.ngloader.referee.module.RefereeModule;
 import de.ngloader.referee.util.NameMapper;
+import discord4j.common.util.Snowflake;
 import discord4j.core.object.entity.Message;
 import discord4j.core.object.entity.channel.TextChannel;
 import discord4j.core.spec.EmbedCreateSpec;
@@ -84,14 +84,12 @@ public class SchoolplanModule extends RefereeModule {
 
 	private final RefereeConfig config;
 
-	private TextChannel channel;
+	private final List<ScheduleClass> classes = new ArrayList<>();
 
+	private SchoolplanThread updateTask;
+	
 	private String previousFile;
 	private Color previousColor;
-
-	private Thread currentThread;
-	private AtomicBoolean running = new AtomicBoolean(false);
-	private int failedRequestCount = 0;
 
 	public SchoolplanModule(Referee app) {
 		super(app, "Schoolplan");
@@ -100,7 +98,35 @@ public class SchoolplanModule extends RefereeModule {
 
 	@Override
 	protected void onInitalize() {
-		this.channel = (TextChannel) app.getGuild().getChannelById(config.getPlanChannelId()).block();
+		Properties properties = this.config.getProperties();
+		
+		int index = 0;
+		for (;;) {
+			String name = properties.getProperty(String.format("schoolplan.%d.name", index), null);
+			String tagId = properties.getProperty(String.format("schoolplan.%d.tagId", index), null);
+			String channelId = properties.getProperty(String.format("schoolplan.%d.channelId", index), null);
+			
+			if (name == null && tagId == null && channelId == null) {
+				break;
+			} else if (name == null) {
+				RefereeLogger.warn("Schoolplan: Missing name by index " + index);
+				continue;
+			} else if (tagId == null) {
+				RefereeLogger.warn("Schoolplan: Missing tagId by index " + index);
+				continue;
+			} else if (channelId == null) {
+				RefereeLogger.warn("Schoolplan: Missing channelId by index " + index);
+				continue;
+			}
+			
+			Snowflake snowflakeChannelId = Snowflake.of(channelId);
+			TextChannel textChannel = (TextChannel) app.getGuild().getChannelById(snowflakeChannelId).block();
+			
+			this.classes.add(new ScheduleClass(name, tagId, textChannel));
+			index++;
+		}
+		
+		RefereeLogger.info("Schoolplan: Loaded " + this.classes.size() + " classes.");
 	}
 
 	@Override
@@ -120,75 +146,40 @@ public class SchoolplanModule extends RefereeModule {
 	}
 
 	public void forceUpdate(boolean force) {
-		boolean isRunning = this.running.get();
-		this.stopScheduler();
+		if (this.updateTask != null) {
+			this.updateTask.forceUpdate();
+			return;
+		}
 
 		try {
 			this.updatePlan(force);
 		} catch (IOException | InterruptedException e) {
 			RefereeLogger.error("Failed to update plan!", e);
 		}
-
-		if (isRunning) {
-			this.startScheduler();
-		}
 	}
 
 	public boolean startScheduler() {
-		if (this.running.compareAndSet(false, true)) {
-			this.currentThread = new Thread(() -> this.tickTask(), "Referee - Schoolplan - Scheduler");
-			this.currentThread.start();
-			
-			RefereeLogger.info("Schoolplan scheduler started.");
-			return true;
+		if (this.updateTask != null) {
+			return false;
 		}
-		return false;
+		
+		this.updateTask = new SchoolplanThread(this);
+		this.updateTask.start();
+
+		RefereeLogger.info("Schoolplan scheduler started.");
+		return true;
 	}
 
 	public boolean stopScheduler() {
-		boolean runningToggled = this.running.compareAndSet(true, false);
-		if (this.currentThread != null) {
-			if (!this.currentThread.isInterrupted()) {
-				this.currentThread.interrupt();
-			}
-			
-			this.currentThread = null;
-
-			RefereeLogger.info("Schoolplan scheduler stopped.");
-			return runningToggled;
+		if (this.updateTask == null) {
+			return false;
 		}
-		return false;
-	}
+		
+		this.updateTask.destroy();
+		this.updateTask = null;
 
-	private void tickTask() {
-		while(this.running.get()) {
-			try {
-				this.updatePlan(false);
-			} catch (Exception e) {
-				RefereeLogger.error(String.format("Something went wrong! Try (%d/30)", this.failedRequestCount++), e);
-				
-				if (this.failedRequestCount > 30) {
-					RefereeLogger.warn("Stopping tick task from plan scheduler because alle 30 request failed!");
-					this.stopScheduler();
-					
-					this.channel.createMessage(String.format("<@%s> Stundenplan scheduler wegen störungen pausiert! Bitte logs überprüfen!",
-							this.config.getAdminRoleId().asString())
-						).subscribe();
-					return;
-				}
-				
-				RefereeLogger.info("Request will retry in 30min!");
-			}
-			
-			try {
-				Thread.sleep(1000 * 60 * 30); // check for updates every 30min.
-			} catch (InterruptedException e) {
-				// ignore interrupted exception
-			} catch (Exception e) {
-				RefereeLogger.error("Error in tick task from plan scheduler! stopping task", e);
-				this.stopScheduler();
-			}
-		}
+		RefereeLogger.info("Schoolplan scheduler stopped.");
+		return true;
 	}
 
 	private void savePrevious() {
@@ -226,12 +217,13 @@ public class SchoolplanModule extends RefereeModule {
 		}
 	}
 
-	private void updatePlan(boolean force) throws IOException, InterruptedException {
-		try (HttpClient client = this.requestNewLogin()) {
-			if (client == null) {
-				throw new NullPointerException("Invalid login data for ilias!");
-			}
-			
+	void updatePlan(boolean force) throws IOException, InterruptedException {
+		HttpClient client = this.requestNewLogin();
+		if (client == null) {
+			throw new NullPointerException("Invalid login data for ilias!");
+		}
+		
+		try {
 			String download = this.requestLatestDownloadPath(client);
 			if (!force && this.previousFile != null && this.previousFile.equalsIgnoreCase(download)) {
 				return;
@@ -244,29 +236,38 @@ public class SchoolplanModule extends RefereeModule {
 			List<ScheduleWeekly> scheduleList = this.analyzePlan(path);
 			
 			if (scheduleList != null) {
-				Optional<ScheduleWeekly> scheduleOptional = scheduleList.stream().filter(schedule -> schedule.course().endsWith("HVI 24/1")).findAny();
-				if (scheduleOptional.isEmpty()) {
-					return;
-				}
+				// update display color
+				Color color;
+				Random random = new Random();
+				do {
+					color = COLOR_LIST[random.nextInt(COLOR_LIST.length)];
+				} while (this.previousColor == color);
+				this.previousColor = color;
+				
+				// print new plan
+				for (ScheduleClass clazz : this.classes) {
+					Optional<ScheduleWeekly> scheduleOptional = scheduleList.stream().filter(schedule -> schedule.course().endsWith(clazz.name())).findAny();
+					if (scheduleOptional.isEmpty()) {
+						RefereeLogger.warn("Unable to find name in scheduler \'" + clazz.name() + "\'");
+						return;
+					}
 
-				this.printPlan(scheduleOptional.get());
+					this.printPlan(scheduleOptional.get(), clazz);
+				}
+				
+				// save changes
 				this.savePrevious();
 			}
+		} finally {
+			client.shutdownNow();
 		}
 	}
 	
-	private void printPlan(ScheduleWeekly schedule) {
+	private void printPlan(ScheduleWeekly schedule, ScheduleClass clazz) {
 		List<ScheduleDaily> dailySchedule = schedule.daily();
 
-		Color color;
-		Random random = new Random();
-		do {
-			color = COLOR_LIST[random.nextInt(COLOR_LIST.length)];
-		} while (this.previousColor == color);
-		this.previousColor = color;
-
-		Message headerMessage = this.channel.createMessage(MessageCreateSpec.builder()
-				.content(String.format("<@%s> Es gibt einen neuen Stundenplan!", this.config.getPlanTagId()))
+		Message headerMessage = clazz.channel().createMessage(MessageCreateSpec.builder()
+				.content(String.format("<@%s> Es gibt einen neuen Stundenplan!", clazz.tagId()))
 				.addEmbed(EmbedCreateSpec.builder()
 						.title(schedule.date())
 						.footer(String.format("Kurs: %s\nKlassenlehrer: %s",
@@ -285,8 +286,8 @@ public class SchoolplanModule extends RefereeModule {
 					.title(DAY_NAME_LIST[dayIndex])
 					.color(this.previousColor)
 					.description(String.format("[Übersicht](https://discordapp.com/channels/%s/%s/%s)",
-							this.channel.getGuildId().asString(),
-							this.channel.getId().asString(),
+							clazz.channel().getGuildId().asString(),
+							clazz.channel().getId().asString(),
 							headerMessage.getId().asString()))
 					.footer(schedule.date(), "");
 
@@ -295,6 +296,9 @@ public class SchoolplanModule extends RefereeModule {
 
 			int lessonIndex = 0;
 			for (ScheduleLesson abstractLesson : daily.lessons()) {
+				String addition = NameMapper.ADDITION.getName(abstractLesson.addition());
+				boolean hasAddition = !addition.isBlank();
+				
 				if (abstractLesson instanceof ScheduleLessonEntry lesson) {
 					embedBuilder.addField(
 							String.format("**%s** ``Raum: %s``", DAY_HOUR_LIST[lessonIndex], lesson.room()),
@@ -304,21 +308,19 @@ public class SchoolplanModule extends RefereeModule {
 									lesson.course(),
 									NameMapper.TEACHER.getName(lesson.teacher()),
 									lesson.teacher(),
-									lesson.addition() != null && !lesson.addition().isBlank()
-										? "**Info: ** ``" + lesson.addition() + "``"
-										: lesson.addition()),
+									hasAddition ? "**Info: ** ``" + addition + "``" : ""),
 							false);
 				} else {
 					embedBuilder.addField(
 							String.format("**%s**", DAY_HOUR_LIST[lessonIndex]),
-							String.format("**Info** ``%s``", abstractLesson.addition()),
+							String.format("**Info** ``%s``", addition),
 							false);
 				}
 				
 				lessonIndex++;
 			}
 
-			this.channel.createMessage(embedBuilder.build()).subscribe();
+			clazz.channel().createMessage(embedBuilder.build()).subscribe();
 		}
 	}
 	
@@ -505,6 +507,20 @@ public class SchoolplanModule extends RefereeModule {
 	}
 
 	public void destroy() {
+		if (this.updateTask != null) {
+			this.updateTask.destroy();
+			this.updateTask = null;
+		}
+		
 		this.stopScheduler();
+		RefereeLogger.info("Schoolplan destroyed...");
+	}
+	
+	public String getAdminRoleId() {
+		return this.config.getAdminRoleId().asString();
+	}
+	
+	public List<ScheduleClass> getClasses() {
+		return this.classes;
 	}
 }

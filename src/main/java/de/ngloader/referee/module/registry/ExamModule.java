@@ -14,26 +14,18 @@ public class ExamModule extends RefereeModule {
 
 	@Override
 	protected void onInitalize() {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	protected void onEnable() {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	protected void onDisable() {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	protected List<RefereeCommand> registerCommands() {
-		// TODO Auto-generated method stub
 		return List.of();
 	}
-
 }

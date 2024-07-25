@@ -19,12 +19,14 @@ public class NameMapper {
 
 	public static final NameMapper COURSE = new NameMapper(Path.of("./data/courseNames.properties"));
 	public static final NameMapper TEACHER = new NameMapper(Path.of("./data/teacherNames.properties"));
+	public static final NameMapper ADDITION = new NameMapper(Path.of("./data/addition.properties"));
 
 	public static void initalizeStaticFields() { }
 	
 	public static void reloadAll() {
 		COURSE.reload();
 		TEACHER.reload();
+		ADDITION.reload();
 	}
 
 	private final Path file;

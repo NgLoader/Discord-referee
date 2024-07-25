@@ -9,6 +9,7 @@ import de.ngloader.referee.RefereeLogger;
 import de.ngloader.referee.command.CommandManager;
 import de.ngloader.referee.command.RefereeCommand;
 import de.ngloader.referee.module.registry.ExamModule;
+import de.ngloader.referee.module.registry.VerifierModule;
 import de.ngloader.referee.module.registry.schoolplan.SchoolplanModule;
 
 public class ModuleManager {
@@ -21,6 +22,7 @@ public class ModuleManager {
 		this.commandManager = app.getCommandManager();
 		
 		this.registerModule(new SchoolplanModule(app));
+		this.registerModule(new VerifierModule(app));
 		this.registerModule(new ExamModule(app));
 		
 		this.modules.values().forEach(RefereeModule::initalize);
