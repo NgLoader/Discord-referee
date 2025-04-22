@@ -24,6 +24,7 @@ public class ModuleManager {
 		this.registerModule(new SchoolplanModule(app));
 		this.registerModule(new VerifierModule(app));
 		this.registerModule(new ExamModule(app));
+//		this.registerModule(new DownloadAllModule(app));
 		
 		this.modules.values().forEach(RefereeModule::initalize);
 		

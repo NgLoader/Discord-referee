@@ -5,11 +5,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.CookieManager;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpClient.Redirect;
 import java.net.http.HttpRequest;
-import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
@@ -17,15 +15,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Random;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -46,8 +42,8 @@ import discord4j.rest.util.Color;
 
 public class SchoolplanModule extends RefereeModule {
 	
-	private static final Pattern PATTERN_LESSON = Pattern.compile(" ([A-Za-z]{4})([A-Za-z0-9-]+)\\s+([A-Za-z0-9]+)\\s+([A-Za-z0-9 .,]{0,}|\\s+)(Mo|Di|Mi|Do|Fr|Sa|So|[0-9])");
-	private static final Pattern PATTERN_CUSTOM = Pattern.compile(" ([A-Za-z0-9]{1,})\\s{0,}(Mo|Di|Mi|Do|Fr|Sa|So|[0-9])");
+	private static final Pattern PATTERN_LESSON = Pattern.compile(" ([A-Za-züöäÜÖÄ]{4})([A-Za-züöäÜÖÄ0-9-]+)\\s+([A-Za-züöäÜÖÄ0-9]+)\\s+([A-Za-züöäÜÖÄ0-9 .,]{0,}|\\s+)(Mo|Di|Mi|Do|Fr|Sa|So|[0-9])");
+	private static final Pattern PATTERN_CUSTOM = Pattern.compile(" ([A-Za-züöäÜÖÄ0-9]{1,})\\s{0,}(Mo|Di|Mi|Do|Fr|Sa|So|[0-9])");
 
 	private static final Path PREVIOUS_FILE = Path.of("./data/cache/studenplan.previous.properties");
 
@@ -75,12 +71,15 @@ public class SchoolplanModule extends RefereeModule {
 			"07:30 - 09:00",
 			"09:30 - 11:00",
 			"11:30 - 13:00",
-			"13:30 - 15:00",
-			"missing - missing",
-			"missing - missing",
-			"missing - missing",
-			"missing - missing"
+			"13:30 - 15:00"
 	};
+	
+	private static String getDayHourName(int index) {
+		if (DAY_HOUR_LIST.length > index) {
+			return DAY_HOUR_LIST[index];
+		}
+		return "missing - missing";
+	}
 
 	private final RefereeConfig config;
 
@@ -301,7 +300,7 @@ public class SchoolplanModule extends RefereeModule {
 				
 				if (abstractLesson instanceof ScheduleLessonEntry lesson) {
 					embedBuilder.addField(
-							String.format("**%s** ``Raum: %s``", DAY_HOUR_LIST[lessonIndex], lesson.room()),
+							String.format("**%s** ``Raum: %s``", getDayHourName(lessonIndex), lesson.room()),
 							String.format("**%s** ``(%s)``\n"
 									+ "**%s** ``%s``\n%s",
 									NameMapper.COURSE.getName(lesson.course()),
@@ -312,7 +311,7 @@ public class SchoolplanModule extends RefereeModule {
 							false);
 				} else {
 					embedBuilder.addField(
-							String.format("**%s**", DAY_HOUR_LIST[lessonIndex]),
+							String.format("**%s**", getDayHourName(lessonIndex)),
 							String.format("**Info** ``%s``", addition),
 							false);
 				}
@@ -368,7 +367,8 @@ public class SchoolplanModule extends RefereeModule {
 						}
 					}
 					
-					Matcher matcherLesson = PATTERN_LESSON.matcher(line);						/*
+					Matcher matcherLesson = PATTERN_LESSON.matcher(line);
+					/*
 					 * pattern:
 					 * <Teacher>-<Type> <Room> <Room>
 					 * <Teacher>-<Type> <Room> <Addition> <Room>
@@ -390,6 +390,7 @@ public class SchoolplanModule extends RefereeModule {
 					 *  NIGEde-v 404 3
 					 *  NIGEdev 404 content3
 					 *  NIGEdev 404 content 3
+					 *  NIGEüt1u 220
 					 */
 					if (matcherLesson.find()) {
 						String teacher = matcherLesson.group(1);
@@ -403,7 +404,8 @@ public class SchoolplanModule extends RefereeModule {
 						continue;
 					}
 					
-					Matcher matcherCustom = PATTERN_CUSTOM.matcher(line);						/*
+					Matcher matcherCustom = PATTERN_CUSTOM.matcher(line);
+					/*
 					 * pattern:
 					 * <Addition> <Room>
 					 * <Addition><Room>
@@ -449,33 +451,41 @@ public class SchoolplanModule extends RefereeModule {
 				.cookieHandler(cookieManager)
 				.build();
 
-		Map<String, String> parameters = new HashMap<>();
-		parameters.put("username", this.config.getIliasUsername());
-		parameters.put("password", this.config.getIliasPasswort());
-		parameters.put("cmd[doStandardAuthentication]", "Anmelden");
-
-		String form = parameters.entrySet()
-		    .stream()
-		    .map(e -> URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8) + "=" + URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8))
-		    .collect(Collectors.joining("&"));
-
-		HttpRequest request = HttpRequest.newBuilder(URI.create("https://meister.bfe-elearning.de/ilias.php?client_id=c-il-meister&cmd=post&cmdClass=ilstartupgui&cmdNode=10k&baseClass=ilStartUpGUI"))
-				.POST(BodyPublishers.ofString(form))
+		HttpRequest getRequest = HttpRequest.newBuilder()
+				.uri(URI.create("https://meister.bfe-elearning.de/ilias.php?baseClass=ilStartupGUI"))
+				.GET()
 				.header("User-Agent", "NgLoader/1.0.0")
-				.header("Cache-Control", "no-cache")
-				.header("Content-Type", "application/x-www-form-urlencoded")
 				.build();
+		client.send(getRequest, HttpResponse.BodyHandlers.ofString());
 
-		HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
-		return response.statusCode() == 302 ? client : null;
+		String boundary = "----geckoformboundary" + UUID.randomUUID().toString().replace("-", "");
+		String CRLF = "\r\n";
+
+		String body = "--" + boundary + CRLF +
+				"Content-Disposition: form-data; name=\"login_form/input_3/input_4\"" + CRLF + CRLF +
+				this.config.getIliasUsername() + CRLF +
+				"--" + boundary + CRLF +
+				"Content-Disposition: form-data; name=\"login_form/input_3/input_5\"" + CRLF + CRLF +
+				this.config.getIliasPasswort() + CRLF +
+				"--" + boundary + "--" + CRLF;
+
+		HttpRequest postRequest = HttpRequest.newBuilder()
+				.uri(URI.create("https://meister.bfe-elearning.de/ilias.php?baseClass=ilstartupgui&cmd=post&fallbackCmd=doStandardAuthentication"))
+				.header("User-Agent", "NgLoader/1.0.0")
+				.header("Content-Type", "multipart/form-data; boundary=" + boundary)
+				.POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+				.build();
+		HttpResponse<String> postResponse = client.send(postRequest, HttpResponse.BodyHandlers.ofString());
+
+		return postResponse.statusCode() == 302 ? client : null;
 	}
 
 	private String requestLatestDownloadPath(HttpClient client) throws IOException, InterruptedException {
-		HttpRequest request = HttpRequest.newBuilder(URI.create("https://meister.bfe-elearning.de/ilias.php?ref_id=43215&cmd=render&cmdClass=ilrepositorygui&cmdNode=xb&baseClass=ilrepositorygui"))
+		HttpRequest request = HttpRequest.newBuilder(URI.create("https://meister.bfe-elearning.de/ilias.php?baseClass=ilrepositorygui&cmdNode=xn:le&cmdClass=ilObjCategoryGUI&ref_id=43215"))
 				.GET()
 				.header("User-Agent", "NgLoader/1.0.0")
 				.header("Cache-Control", "no-cache")
-				.header("Content-Type", "application/x-www-form-urlencoded")
+				.header("Content-Type", "text/html; charset=UTF-8")
 				.build();
 
 		HttpResponse<Stream<String>> response = client.send(request, BodyHandlers.ofLines());
